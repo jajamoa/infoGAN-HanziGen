@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Apr 23 19:52:04 2019
 
-@author: Acer
-""" 
 import cv2
 import numpy as np
 import time
@@ -38,7 +34,8 @@ class Model():
         self.input_c = tf.placeholder(tf.float32,shape=(batch_size,10))
         self.input_zc = tf.concat((self.input_z,self.input_c),axis=-1)
         self.g_outputs = self.build_generator(self.input_zc,is_training=True,is_reuse=False)
-        self.sample_outputs = self.build_generator(self.input_zc,is_training=False,is_reuse=True)
+        #self.sample_outputs = self.build_generator(self.input_zc,is_training=False,is_reuse=True)
+        self.sample_outputs = self.build_generator(self.input_zc,is_training=False,is_reuse=False)
         d_logits_fake, q_logits_fake = self.build_discriminator(self.g_outputs,is_training=True,is_reuse=False)
         d_logits_real, _ = self.build_discriminator(self.input_i,is_training=True,is_reuse=True)
 
@@ -68,6 +65,8 @@ class Model():
                 .minimize(self.g_loss,var_list=self.g_vars)
 
         sess.run(tf.global_variables_initializer())
+        
+        
 
     def build_generator(self,input_z,is_training, is_reuse):
         w_init = tf.random_normal_initializer(stddev=0.02)
@@ -185,7 +184,8 @@ class Model():
             real_batch = shuffled_images[i*self.batch_size:(i+1)*self.batch_size]
             z =  np.random.normal(loc=0.0,scale=1.0,size=(self.batch_size,90)) #np.random.uniform(-1,1,(model.batch_size,40))
             c = np.random.multinomial(1,[0.1]*10,size=self.batch_size)
-            d_loss,_ = sess.run([self.d_loss,self.d_optim],feed_dict={self.input_i:real_batch,self.input_z:z,self.input_c:c})
+            d_loss,_ = sess.run([self.d_loss,self.d_optim],
+                                    feed_dict={self.input_i:real_batch,self.input_z:z,self.input_c:c})
             #q_loss,_ = sess.run([self.q_loss,self.q_optim],
             #                        feed_dict={self.input_i:real_batch,self.input_z:z,self.input_c:c})
             for _ in range(ratio):
@@ -203,11 +203,19 @@ class Model():
 
         print("time: %4.4f, d_loss: %.8f, g_loss: %.8f "%
               (time.time() - start_time, mean_d_loss, mean_g_loss))
-
         return img,mean_d_loss,mean_g_loss
+    def generate(self,z_sample,c_sample):
+        saver=tf.train.import_meta_graph('./ckpt/gan.ckpt-30.meta')
+        saver.restore(sess,tf.train.latest_checkpoint('./ckpt'))
+        img = sess.run(self.sample_outputs, feed_dict={self.input_z:z_sample,self.input_c:c_sample})
+        return img
+            
+        
+
+        
 
 if __name__ == "__main__":
-    nb_epochs = 350
+    nb_epochs = 200
     cc = CommonChar()
     ic = ImageChar()
     X_all = []
@@ -250,7 +258,8 @@ if __name__ == "__main__":
         X_train = X_train.reshape(X_train.shape + (1,))
 
     sess = tf.Session(config=config)
-    model = Model(batch_size=128,sess=sess)
+    model = Model(batch_size=256,sess=sess)
+    saver=tf.train.Saver(max_to_keep=1)
 
     d_losses = []
     g_losses = []
@@ -266,6 +275,7 @@ if __name__ == "__main__":
     for epoch in range(nb_epochs):
         print("Epoch is ", epoch)
         img, d_loss, g_loss = model.train_one_epoch(X_train, z_sample, c_sample, sess, ratio=2)
+        saver.save(sess,'./ckpt/gan.ckpt',global_step=epoch+1)
         image = combine_images(img)
         image = image*127.5+127.5
 
